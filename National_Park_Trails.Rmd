@@ -1,0 +1,178 @@
+---
+title: 'Analysis of National Park Trails'
+author: "Henry Siegler"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(formattable)
+```
+
+### The Data
+
+The data below contains data on every trail in the National Parks Service, with information gathered from alltrails.com. [Link to data](https://www.kaggle.com/datasets/planejane/national-park-trails).
+
+```{r}
+np_trails <- read_csv(here::here("national_park_trails.csv"))
+```
+
+```{r}
+#This is how the data is formatted
+np_trails %>% 
+  head(n = 2) %>% 
+  formattable()
+```
+
+__National Parks with Most 5 Star Rated Trails __
+
+```{r}
+np_trails %>% 
+  filter(avg_rating == 5) %>% 
+  group_by(area_name) %>%
+  count() %>% 
+  as.data.frame() %>% 
+  slice_max(n, n = 5) %>% 
+  rename(number_of_trails = n)
+```
+__Longest Trails in Miles__
+
+```{r}
+np_trails %>% 
+  mutate(length_miles = length / 1609.34) %>% 
+  slice_max(length_miles, n = 3) %>%
+  pull(length_miles, name)
+```
+
+__Number of National Parks with "Canyon in the Name__
+
+```{r}
+np_trails %>% 
+  distinct(area_name) %>% 
+  pull(area_name) %>% 
+  str_detect("Canyon") %>% 
+  sum()
+```
+__Most Common Words Found in Trail Names__
+
+```{r}
+all_words <- np_trails %>% 
+  pull(name) %>% 
+  str_c(collapse = " ") %>% 
+  str_to_lower() %>% 
+  str_split(" ") %>% 
+  as.data.frame(col.names = "single_word")
+
+all_words <- all_words %>% 
+  filter(single_word != "trail",
+         single_word != "to",
+         single_word != "loop",
+         single_word != "and",
+         single_word != "via",
+         )
+
+all_words %>% 
+  group_by(single_word) %>% 
+  count(sort = TRUE) %>% 
+  as.data.frame() %>% 
+  slice_max(n, n = 5) %>% 
+  pull(single_word)
+```
+
+__Function that Provides the Names of Trails that Fit certain Criteria__
+
+```{r}
+#Function takes the dataset and the national park as required arguments.
+#Optional arguments are the minimum and maximum trail length in miles, the minimum rating, and the type of trail (out and back, loop, etc.)
+
+recommend_trails <- function(dataset, park, min_len_mi = 0, 
+                             max_len_mi = NULL, min_rating = 0, type = NULL){
+  
+  stopifnot(is.data.frame(dataset),
+            is.character(park),
+            is.numeric(min_len_mi),
+            is.numeric(max_len_mi) | is.null(max_len_mi),
+            is.numeric(min_rating),
+            is.character(type) | is.null(type)
+            )
+  
+  dataset <- dataset %>% 
+    mutate(length_miles = length / 1609.34)
+  
+  dataset <- dataset %>% 
+    filter(area_name == park,
+           length_miles >= min_len_mi,
+           avg_rating >= min_rating)
+  
+  if (is.null(max_len_mi)) {
+    dataset <- dataset
+  } else if (is.numeric(max_len_mi)) {
+    dataset <- dataset %>% 
+      filter(length_miles <= max_len_mi)
+  }
+  
+  if (is.null(type)) {
+    dataset <- dataset
+  } else if (is.character(type)) {
+    dataset <- dataset %>% 
+      filter(route_type == type)
+  }
+
+  dataset %>% 
+    pull(name)
+}
+```
+
+```{r}
+#Test the function
+np_trails %>%
+  recommend_trails("Yellowstone National Park", 
+                   min_len_mi = 10, 
+                   min_rating = 4, 
+                   type = "loop")
+
+np_trails %>%
+  recommend_trails("Redwood National Park", 
+                   min_len_mi = 5, 
+                   min_rating = 4.5, 
+                   type = "out and back")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
