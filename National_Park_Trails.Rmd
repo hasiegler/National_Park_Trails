@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE,
 
 ```{r}
 library(tidyverse)
-library(formattable)
+library(broom)
 ```
 
 ### The Data
@@ -21,13 +21,6 @@ The data below contains data on every trail in the National Parks Service, with 
 
 ```{r}
 np_trails <- read_csv(here::here("national_park_trails.csv"))
-```
-
-```{r}
-#This is how the data is formatted
-np_trails %>% 
-  head(n = 2) %>% 
-  formattable()
 ```
 
 __National Parks with Most 5 Star Rated Trails __
@@ -89,7 +82,8 @@ __Function that Provides the Names of Trails that Fit certain Criteria__
 
 ```{r}
 #Function takes the dataset and the national park as required arguments.
-#Optional arguments are the minimum and maximum trail length in miles, the minimum rating, and the type of trail (out and back, loop, etc.)
+#Optional arguments are the minimum and maximum trail length in miles,
+#the minimum rating, and the type of trail (out and back, loop, etc.)
 
 recommend_trails <- function(dataset, park, min_len_mi = 0, 
                              max_len_mi = NULL, min_rating = 0, type = NULL){
@@ -123,6 +117,10 @@ recommend_trails <- function(dataset, park, min_len_mi = 0,
     dataset <- dataset %>% 
       filter(route_type == type)
   }
+  
+  if (nrow(dataset) == 0){
+    return("No trails match the criteria")
+  }
 
   dataset %>% 
     pull(name)
@@ -134,45 +132,133 @@ recommend_trails <- function(dataset, park, min_len_mi = 0,
 np_trails %>%
   recommend_trails("Yellowstone National Park", 
                    min_len_mi = 10, 
-                   min_rating = 4, 
+                   min_rating = 4.9, 
                    type = "loop")
 
 np_trails %>%
-  recommend_trails("Redwood National Park", 
+  recommend_trails("Redwood National Park",
                    min_len_mi = 5, 
                    min_rating = 4.5, 
                    type = "out and back")
+
+
+np_trails %>% 
+  recommend_trails("Zion National Park",
+                   min_len_mi = 50)
 ```
 
+### Trail Elevation Gain for Kings Canyon and Sequoia National Parks
 
+```{r}
+np_trails %>% 
+  filter(area_name == "Sequoia National Park" |
+         area_name == "Kings Canyon National Park") %>% 
+  mutate(length_miles = length / 1609.34) %>% 
+  ggplot(aes(x = length_miles, 
+             y = elevation_gain, 
+             color = route_type)) + 
+  geom_point() + 
+  facet_wrap(~ area_name) + 
+  labs(x = "Trail Length (miles)", 
+       y = "Elevation Gain (meters)") + 
+  scale_y_continuous(label = scales::comma) + 
+  scale_color_manual(values = c("red",
+                                "dodgerblue3",
+                                "green2"),
+                     name = "Route Type",
+                     labels = c("Loop", "Out and Back", "Point to Point"))
+  
+```
 
+In both parks, it appears that elevation gain is increasing at a slightly decreasing rate. For example, for shorter trails under 35 miles, it appears that the slope for the relationship between the two variables is slightly steeper than if we were only looking at trails that were 35 miles or longer. However, this is not too significant, and the relationship appears to be relatively linear overall for both parks.
 
+The relationship between the two variables seems to be significantly stronger for Sequoia National Park compared to Kings Canyon National Park. There is much more variability in elevation gains in Kings Canyon National Park across all the trail lengths, especially in its longer trails. 
 
+### Simple Linear Regression
 
+We will now consider each of the quantitative variables in the national park trails dataset as a possible explanatory variable for a simple linear regression model that predicts elevation gain of a trail in either Seqouia National Park or Kings Canyon National Park. 
 
+We will use each quantitative variable in the dataset as an explanatory variable, and then look at which model is the best, by looking for the model with the highest $R^2$ value.
 
+```{r}
+seki_trails <- np_trails %>% 
+  mutate(trail_id = as.character(trail_id)) %>% 
+  filter(area_name == "Sequoia National Park" |
+         area_name == "Kings Canyon National Park")
 
+seki_trails %>% 
+  select_if(is.numeric) %>% 
+  map(~ lm(elevation_gain ~ .x, data = seki_trails)) %>% 
+  map(summary) %>% 
+  map_dbl("r.squared") %>% 
+  tidy() %>% 
+  filter(names != "elevation_gain") %>% 
+  arrange(desc(x)) %>% 
+  rename(r_squared = x,
+         x_var = names) %>% 
+  mutate(r_squared = round(r_squared, 3))
+```
 
+Using each of the quantitative variables in the dataset with only Seqouia National Park and Kings Canyon National Park trails, the two best explanatory variables for explaining the most variability in elevation gain in a simple linear regression model are "length" (in meters) and "difficulty_rating" (1 to 7 scale).
 
+### Simple Linear Regression Model
 
+```{r}
+mod1 <- seki_trails %>% 
+  lm(elevation_gain ~ length, data = .)
 
+mod1$coefficients %>% 
+  tidy() %>% 
+  mutate(r_squared = round(summary(mod1)$r.squared, 3),
+         x = round(x, 3)) %>% 
+  rename(coefficients = names)
+```
 
+$$\widehat{elevation\_gain} = 177.77 + 0.041\ length$$
 
+### Predictions for Other Parks
 
+Now we will analyze how well the simple linear regression model creating using length (in meters) as the explanatory variable from the Sequoia National Park and Kings Canyon National Park trails does for predicting elevation gain for trails at all the other national parks. We will predict the elevation gain for all the other trails and compare the residuals of each trail's elevation gain to its predicted value graphically.
 
+```{r}
+#assemble new dataset to make predictions on
 
+other_trails <- np_trails %>% 
+  mutate(trail_id = as.character(trail_id)) %>% 
+  filter(area_name != "Sequoia National Park",
+         area_name != "Kings Canyon National Park")
 
+#predict values for this new dataset using the model
 
+other_trails_predictions <- tibble(predict_elevation = predict(mod1, 
+                                                               newdata = other_trails))
+```
 
+```{r}
+#add the predictions to the dataset with all of the other trails
 
+other_trails <- other_trails %>% 
+  bind_cols(other_trails_predictions)
 
+#create a column for residuals
 
+other_trails <- other_trails %>% 
+  mutate(resid = elevation_gain - predict_elevation)
+```
 
+```{r}
+other_trails %>% 
+  ggplot(aes(x = predict_elevation, y = resid)) + 
+  geom_point(size = 1, alpha = 0.8) + 
+  geom_hline(yintercept = 0,
+             color = "red") + 
+  labs(x = "Predicted Elevation Gain (meters)", 
+       y = "Residuals", 
+       title = "Residuals vs. Predicted Values") + 
+  scale_x_continuous(label = scales::comma) + 
+  scale_y_continuous(label = scales::comma, 
+                     limits = c(-17500, 5000))
+```
 
-
-
-
-
-
-
+In the plot above, we do not see a random scatter of points, instead we see that the residuals fan out as the predicted elevation gain increases. This suggests that the error variances are not equal. This implies that as predicted elevation gain increases (or trail length increases), the model becomes less and less accurate for predicting the elevation gain of the trail, as the residuals increase in absolute value. The plot does suggest that there is a linear relationship between trail length and elevation gain, as the residuals do not depart from 0 in a systematic manner. However, the model does not predict values for this new data well. We can see that the model created using the data from Sequoia National Park and Kings Canyon National Park overestimates the elevation gain of trails in all the other National Parks much more often that it underestimates the elevation gain. We can see this because most of the residuals are negative, and are under the horizontal red reference line, meaning that all those points under that line were overestimated by the model. The model overestimates values of elevation gain more frequently than it underestimates them for nearly all values of predicted elevation gain. However, for trails with shorter predicted elevation gains (or shorter trail lengths), the model tends to overestimate and underestimate elevation gains about the same amount, as there are around an equal number of points above and below the red reference line. As the predicted elevation gain increases past about 1,250 meters, the model does begin to overestimate elevation gains much more often.
 
