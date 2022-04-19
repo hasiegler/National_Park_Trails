@@ -214,8 +214,6 @@ mod1$coefficients %>%
   rename(coefficients = names)
 ```
 
-$$\widehat{elevation\_gain} = 177.77 + 0.041\ length$$
-
 ### Predictions for Other Parks
 
 Now we will analyze how well the simple linear regression model creating using length (in meters) as the explanatory variable from the Sequoia National Park and Kings Canyon National Park trails does for predicting elevation gain for trails at all the other national parks. We will predict the elevation gain for all the other trails and compare the residuals of each trail's elevation gain to its predicted value graphically.

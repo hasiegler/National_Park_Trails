@@ -279,8 +279,6 @@ mod1$coefficients %>%
     ## 1 (Intercept)  178.          0.9
     ## 2 length         0.041       0.9
 
-$$\\widehat{elevation\\\_gain} = 177.77 + 0.041\\ length$$
-
 ### Predictions for Other Parks
 
 Now we will analyze how well the simple linear regression model creating
